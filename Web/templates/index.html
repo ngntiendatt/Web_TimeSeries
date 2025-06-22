@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dự đoán Tiêu thụ Điện</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        #input-grid::-webkit-scrollbar { width: 8px; height: 8px; }
+        #input-grid::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+        #input-grid::-webkit-scrollbar-thumb { background: #888; border-radius: 10px; }
+        #input-grid::-webkit-scrollbar-thumb:hover { background: #555; }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .error-message { background-color: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 1rem; border-radius: 0.5rem; text-align: center; font-size: 0.875rem; margin-top: 1rem; }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+  <div class="w-full max-w-4xl bg-white rounded-2xl shadow-lg p-6 md:p-8 space-y-6">
+    <div class="text-center">
+      <h1 class="text-2xl md:text-3xl font-bold text-gray-800">Dự đoán Tiêu thụ Điện</h1>
+    </div>    <!-- Tab Navigation removed -->
+    <!-- Short-term -->
+    <form method="post">
+      <div id="short-term-content">      <div class="flex justify-between items-center mb-3">
+          <h2 class="text-lg font-semibold text-gray-700">Dữ liệu đầu vào</h2>
+          <button id="random-data-btn" type="button" class="bg-blue-100 text-blue-700 text-sm font-semibold px-3 py-1 rounded-md hover:bg-blue-200 transition-colors">Tạo dữ liệu ngẫu nhiên</button>
+        </div>
+          {% if error_message %}
+        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+          <div class="flex justify-between items-center">
+            <span class="block sm:inline">{{ error_message }}</span>
+            {% if has_empty_fields %}
+            <button id="fill-missing-btn" type="button" class="bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600 transition-colors">
+              Điền dữ liệu thiếu
+            </button>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+          <div class="grid grid-cols-5 gap-x-4 gap-y-2 text-center font-semibold text-sm text-gray-600 mb-2 px-2">
+            <span>Chu kỳ</span><span>Active Power</span><span>Reactive Power</span><span>Voltage</span><span>Intensity</span>
+          </div>
+          <div id="input-grid" class="max-h-64 overflow-y-auto pr-2"></div>
+        </div>
+        <p class="text-xs text-gray-400 mt-2 text-center"></p>        <div class="grid md:grid-cols-2 gap-6 mt-6">
+          <div>
+            <label for="model-selector-short" class="block text-lg font-semibold text-gray-700 mb-2">Chọn mô hình</label>
+            <select id="model-selector-short" name="model_select" class="w-full p-3 bg-white border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500">  
+              <option value="lstm32">LSTM</option>
+              <option value="lstm64">GRU</option>
+              <option value="transformer">Transformer</option>
+              <option value="custom">TimeNet</option>
+            </select>
+          </div>          <div>
+            <label for="prediction-date" class="block text-lg font-semibold text-gray-700 mb-2">Ngày dự đoán</label>
+            <input type="date" id="prediction-date" name="prediction_date" class="w-full p-3 bg-white border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500" value="{{today_date}}">
+          </div>
+        </div>
+        <button id="predict-btn-short" type="submit" class="w-full bg-blue-600 text-white font-bold p-3 rounded-lg shadow-md hover:bg-blue-700 mt-6">Dự đoán</button>
+      </div>
+    </form>
+      <!-- Future-date content removed -->
+    
+    <!-- Short-term output as modal -->    <div id="short-term-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white p-6 rounded-xl w-11/12 max-w-md">        <h2 class="text-xl font-semibold text-gray-800 mb-4 text-center">Kết quả Dự đoán</h2>
+        <p class="text-sm text-gray-600 text-center mb-4" id="prediction-date-display">Ngày: --</p>
+        <div id="loader-short" class="mx-auto my-4 loader hidden"></div>
+        <div id="error-box-short" class="hidden"></div>
+        <div id="results-container-short" class="grid grid-cols-1 gap-4 text-center">
+          <div class="bg-green-50 border border-green-200 p-4 rounded-lg">
+            <p class="text-sm font-medium text-green-700">1 giờ sau</p>
+            <p id="pred-1h" class="text-2xl font-bold text-green-900 mt-1">--</p>
+          </div>
+          <div class="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
+            <p class="text-sm font-medium text-yellow-700">2 giờ sau</p>
+            <p id="pred-2h" class="text-2xl font-bold text-yellow-900 mt-1">--</p>
+          </div>
+          <div class="bg-red-50 border border-red-200 p-4 rounded-lg">
+            <p class="text-sm font-medium text-red-700">3 giờ sau</p>
+            <p id="pred-3h" class="text-2xl font-bold text-red-900 mt-1">--</p>
+          </div>
+        </div>
+        <button id="close-short-modal" class="mt-6 w-full bg-gray-300 text-gray-800 py-2 rounded-lg hover:bg-gray-400">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // JS logic separated in app.py; only UI scripts here
+    document.addEventListener('DOMContentLoaded', () => {
+      // Tab handling omitted
+      // Generate random data on load
+      generateRandomData();
+
+      document.getElementById('random-data-btn').addEventListener('click', generateRandomData);
+      document.getElementById('predict-btn-short').addEventListener('click', (e) => {
+        e.preventDefault();
+        // Trigger prediction and show modal on response
+        document.querySelector('form').submit();
+      });
+      document.getElementById('close-short-modal').addEventListener('click', () => {
+        document.getElementById('short-term-modal').classList.add('hidden');
+      });
+    });    // Function to create grid and fill with data
+    function createInputGrid(useRandomData = true, previousData = null) {
+      const inputGrid = document.getElementById('input-grid');
+      inputGrid.innerHTML = '';
+      for (let i = 0; i < 24; i++) {
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-5 gap-x-4 items-center mb-2';
+        const cycle = document.createElement('span');
+        cycle.className = 'text-center text-sm font-medium text-gray-500';
+        cycle.textContent = i + 1;
+        row.appendChild(cycle);
+        for (let j = 0; j < 4; j++) {
+          const inp = document.createElement('input');
+          inp.type = 'number'; inp.step = 'any';
+          const fieldName = `var${i+1}_${j+1}`;
+          inp.name = fieldName;
+          
+          // Set value based on source
+          if (!useRandomData && previousData && previousData[fieldName] !== undefined) {
+            // Highlight empty fields with different border color
+            if (previousData[fieldName] === "") {
+              inp.className = 'w-full p-2 text-sm text-center bg-white border-2 border-red-400 rounded-md';
+              inp.placeholder = "Thiếu";
+            } else {
+              inp.className = 'w-full p-2 text-sm text-center bg-white border border-gray-300 rounded-md';
+              inp.value = previousData[fieldName];
+            }
+          } else {
+            inp.className = 'w-full p-2 text-sm text-center bg-white border border-gray-300 rounded-md';
+            inp.value = (Math.random() * 1).toFixed(4);
+          }
+          
+          row.appendChild(inp);
+        }
+        inputGrid.appendChild(row);
+      }
+    }
+    
+    // Function for random data
+    function generateRandomData() {
+      // Sử dụng seed cố định để tạo dữ liệu ngẫu nhiên nhất quán
+      const seed = 42;
+      let randomState = seed;
+      
+      // Hàm tạo số ngẫu nhiên nhất quán
+      function seededRandom() {
+        const x = Math.sin(randomState++) * 10000;
+        return x - Math.floor(x);
+      }
+      
+      const inputGrid = document.getElementById('input-grid');
+      inputGrid.innerHTML = '';
+      for (let i = 0; i < 24; i++) {
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-5 gap-x-4 items-center mb-2';
+        const cycle = document.createElement('span');
+        cycle.className = 'text-center text-sm font-medium text-gray-500';
+        cycle.textContent = i + 1;
+        row.appendChild(cycle);
+        for (let j = 0; j < 4; j++) {
+          const inp = document.createElement('input');
+          inp.type = 'number'; inp.step = 'any';
+          const fieldName = `var${i+1}_${j+1}`;
+          inp.name = fieldName;
+          
+          inp.className = 'w-full p-2 text-sm text-center bg-white border border-gray-300 rounded-md';
+          inp.value = (seededRandom()).toFixed(4);
+          
+          row.appendChild(inp);
+        }
+        inputGrid.appendChild(row);
+      }
+    }
+    
+    // Initialize with previous data if available    // Hàm nội suy các giá trị thiếu
+    function interpolateMissingValues() {
+      // Đặt seed cố định cho việc nội suy để đảm bảo kết quả nhất quán
+      const seed = 123;
+      let randomState = seed;
+      
+      // Hàm tạo số ngẫu nhiên nhất quán
+      function seededRandom() {
+        const x = Math.sin(randomState++) * 10000;
+        return x - Math.floor(x);
+      }
+      
+      // Lấy tất cả các input
+      const inputs = {};
+      const isEmpty = {};
+      
+      // Thu thập các giá trị đã nhập và đánh dấu các giá trị trống
+      for (let i = 0; i < 24; i++) {
+        for (let j = 1; j <= 4; j++) {
+          const fieldName = `var${i+1}_${j}`;
+          const inputElement = document.querySelector(`input[name="${fieldName}"]`);
+          
+          if (inputElement && inputElement.value.trim() !== '') {
+            inputs[fieldName] = parseFloat(inputElement.value);
+            isEmpty[fieldName] = false;
+          } else {
+            isEmpty[fieldName] = true;
+          }
+        }
+      }
+      
+      // Nội suy cho mỗi cột (1-4)
+      for (let j = 1; j <= 4; j++) {
+        // Tìm các vị trí cần nội suy trong cột này
+        let emptyIndices = [];
+        let filledValues = [];
+        let filledIndices = [];
+        
+        for (let i = 0; i < 24; i++) {
+          const fieldName = `var${i+1}_${j}`;
+          if (isEmpty[fieldName]) {
+            emptyIndices.push(i);
+          } else {
+            filledIndices.push(i);
+            filledValues.push(inputs[fieldName]);
+          }
+        }
+          // Nếu không có giá trị nào đã điền, sử dụng giá trị ngẫu nhiên
+        if (filledValues.length === 0) {
+          for (let i of emptyIndices) {
+            const fieldName = `var${i+1}_${j}`;
+            const inputElement = document.querySelector(`input[name="${fieldName}"]`);
+            if (inputElement) {
+              inputElement.value = (seededRandom() * 1).toFixed(4);
+            }
+          }
+          continue;
+        }
+        
+        // Nội suy tuyến tính đơn giản cho các giá trị thiếu
+        for (let emptyIdx of emptyIndices) {
+          // Tìm chỉ số gần nhất phía trước và sau điểm cần nội suy
+          let lowerIdx = -1, upperIdx = -1;
+          for (let i = 0; i < filledIndices.length; i++) {
+            if (filledIndices[i] < emptyIdx) {
+              lowerIdx = i;
+            } else if (filledIndices[i] > emptyIdx) {
+              upperIdx = i;
+              break;
+            }
+          }
+          
+          // Tính giá trị nội suy
+          let interpolatedValue;
+          if (lowerIdx === -1) {
+            // Nếu không có điểm nào trước đó, lấy điểm đầu tiên
+            interpolatedValue = filledValues[upperIdx];
+          } else if (upperIdx === -1) {
+            // Nếu không có điểm nào sau đó, lấy điểm cuối cùng
+            interpolatedValue = filledValues[lowerIdx];
+          } else {
+            // Nội suy tuyến tính
+            const x1 = filledIndices[lowerIdx];
+            const y1 = filledValues[lowerIdx];
+            const x2 = filledIndices[upperIdx];
+            const y2 = filledValues[upperIdx];
+            interpolatedValue = y1 + ((emptyIdx - x1) / (x2 - x1)) * (y2 - y1);
+          }
+          
+          // Cập nhật giá trị nội suy
+          const fieldName = `var${emptyIdx+1}_${j}`;
+          const inputElement = document.querySelector(`input[name="${fieldName}"]`);
+          if (inputElement) {
+            inputElement.value = interpolatedValue.toFixed(4);
+          }
+        }
+      }
+    }    document.addEventListener('DOMContentLoaded', function() {
+      // Thêm sự kiện cho nút điền dữ liệu thiếu
+      const fillMissingBtn = document.getElementById('fill-missing-btn');
+      if (fillMissingBtn) {
+        fillMissingBtn.addEventListener('click', interpolateMissingValues);
+      }
+      
+      {% if previous_data %}
+        // Create a JavaScript object from the Flask previous_data
+        const previousData = {
+          {% for key, value in previous_data.items() %}
+            "{{ key }}": {% if value == "" %}"" {% else %}{{ value }}{% endif %},
+          {% endfor %}
+        };
+        // Hiển thị dữ liệu đã nhập và đánh dấu các ô thiếu
+        createInputGrid(false, previousData);
+      {% else %}
+        // No previous data, just use random
+        createInputGrid(true);
+      {% endif %}
+    });
+
+    // Add code to display prediction results
+    {% if result %}
+    document.addEventListener('DOMContentLoaded', function() {
+      // Show the modal with results
+      document.getElementById('short-term-modal').classList.remove('hidden');      // Update prediction date
+      document.getElementById('prediction-date-display').textContent = "Ngày: {{ result['date'] }}";
+        // Update prediction values - đảm bảo hiển thị đúng
+      document.getElementById('pred-1h').textContent = "{{ result['1h'] }}";
+      document.getElementById('pred-2h').textContent = "{{ result['2h'] }}";
+      document.getElementById('pred-3h').textContent = "{{ result['3h'] }}";
+    });
+    {% endif %}
+  </script>
+</body>
+</html>
